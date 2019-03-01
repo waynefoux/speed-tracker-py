@@ -1,11 +1,13 @@
 import cv2
 import target
 import logging
+import statistics
 
 # This needs to move to the main class...
-logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s - %(message)s', level=logging.INFO)
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s - %(message)s', level=logging.DEBUG)
 
 DEFAULT_VIDEO_SOURCE = 'http://192.168.0.4:8088/video'      # A streaming location or locaton of file
+VIDEO_ENABLED = True
 ESCAPE_KEY = 27                                             # The numerical value of ESC
 MINIMUM_AREA = 2000                                         # The smallest area in pixels we expect a vehicle to be
 FRAME_NAME = "SpeedCam"                                     # Main frame name
@@ -14,18 +16,18 @@ DISTANCE_IN_FEET = 50
 
 class VideoProcessor:
 
-    def __init__(self, video_feed):
+    def __init__(self, video_feed, video_enabled):
 
         # Logging
         self.logger = logging.getLogger(__name__)
 
         # Initialize service
         self.capture = cv2.VideoCapture(video_feed)
-
-        # Create background subtractor
-        self.background_subtractor = cv2.createBackgroundSubtractorMOG2(history=30, detectShadows=False)
+        self.video_enabled = video_enabled
+        self.statistics = statistics.Statistics()
 
         cv2.namedWindow(FRAME_NAME, flags=cv2.WINDOW_NORMAL)
+
         cv2.setMouseCallback(FRAME_NAME, self.click_event)
 
         self.target = None
@@ -37,15 +39,23 @@ class VideoProcessor:
 
         self.height, self.width, _ = frame.shape
 
+        #calibrator.calibrate(frame)
+
         cv2.imshow(FRAME_NAME, frame)
         cv2.waitKey(0)
+        # if not self.video_enabled:
+        #     cv2.destroyWindow(FRAME_NAME)
+        #     cv2.waitKey()
 
         pixel_distance = abs(self.left - self.right)
         self.pixels_per_foot = pixel_distance / DISTANCE_IN_FEET
 
     # Starts the service
     def start(self):
-        self.logger.info("foo starting")
+        self.logger.info("Beginning video processing.")
+
+        # Create background subtractor
+        background_subtractor = cv2.createBackgroundSubtractorMOG2(history=30, detectShadows=False)
 
         first_frame = None
 
@@ -59,26 +69,19 @@ class VideoProcessor:
             # Capture the frame
             ret, frame = self.capture.read()
 
-
             # We need to do stuff to figure out about the images
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             gray = cv2.GaussianBlur(gray, (21, 11), 0)
-            #gray = cv2.erode(gray, None, iterations=10)
 
             # I think I did this to bootstrap the subtractors
             if first_frame is None:
                 first_frame = gray
                 continue
 
-            #frame_delta = cv2.absdiff(first_frame, gray)
-
-            foreground_frame = self.background_subtractor.apply(gray)
+            foreground_frame = background_subtractor.apply(gray)
 
             # Do stuff to frame
             _, image_threshold = cv2.threshold(foreground_frame, 0, 255, cv2.THRESH_BINARY)
-
-            #cv2.erode(image_threshold, None, iterations=1)
-
             image_threshold = cv2.dilate(image_threshold, None, iterations=3)
 
             # Find contours and sort by size
@@ -101,12 +104,7 @@ class VideoProcessor:
                     num_of_cars = num_of_cars + 1
                     self.mark_object(frame, rect)
 
-            # If we think we found a car...
-            if num_of_cars > 0:
-                #cv2.putText(frame, str(num_of_cars), (10, 10), 0, 0.3, (255, 255, 0))
-                pass
-
-
+            # We will only measure if we see one car
             if num_of_cars == 1 and (x > self.left and (x + w) < self.right):
                 center_of_target = x + (w/2)
                 if self.target is None:
@@ -114,15 +112,26 @@ class VideoProcessor:
                 else:
                     _ = self.target.get_speed_in_mph(center_of_target)
             else:
-                # If no cars are found on frame but one has just passed, get its average speed and clear it.
+                # If no cars or more than one are found but one has just passed, get its average speed and clear it.
                 if self.target is not None:
-                    self.logger.info("Vehicle speed: %sMPH", self.target.get_average_speed_in_mph())
-                    self.target = None
+                    # TODO : Need to figure this error handling out.
+                    try:
+                        average_speed = self.target.get_average_speed_in_mph()
+                        self.logger.info("Vehicle speed: %sMPH", average_speed)
+                        self.statistics.add_target(average_speed,
+                                                   self.target.get_direction_of_travel(),
+                                                   None,
+                                                   None)
+                    except Exception:
+                        self.logger.error("Error")
+                    finally:
+                        self.target = None
 
-            cv2.imshow(FRAME_NAME, frame)
+            if self.video_enabled:
+                cv2.imshow(FRAME_NAME, frame)
 
-            # Can be used for image debugging
-            #cv2.imshow('"Forground Frame', image_threshold)
+                # Can be used for image debugging
+                #cv2.imshow('"Forground Frame', image_threshold)
 
     # Mark the object on the frame
     def mark_object(self, frame, rect):
@@ -153,10 +162,11 @@ class VideoProcessor:
         cv2.line(frame, (self.left, self.height - 10), (self.left, 10), (0, 0, 0))
         cv2.line(frame, (self.right, self.height - 10), (self.right, 10), (0, 0, 0))
 
+
 if __name__ == "__main__":
 
     # Instantiate Video Processor
-    videoProcessor = VideoProcessor(DEFAULT_VIDEO_SOURCE)
+    videoProcessor = VideoProcessor(DEFAULT_VIDEO_SOURCE, VIDEO_ENABLED)
 
     # Start processing
     videoProcessor.start()

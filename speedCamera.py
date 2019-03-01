@@ -1,6 +1,6 @@
 import sys
 import getopt
-import VideoProcessor2
+import videoProcessor
 
 
 
@@ -20,7 +20,9 @@ def main(argv):
         elif opt in ("-i", "--istream"):
             inputstream = arg
 
-            speed_calculator = VideoProcessor2.SpeedCalculator(inputstream)
+
+
+            speed_calculator = videoProcessor.SpeedCalculator(inputstream)
 
             speed_calculator.start()
 
