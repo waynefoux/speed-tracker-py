@@ -1,7 +1,6 @@
 import cv2
-import target
+from speed_tracker import target, statistics
 import logging
-import statistics
 
 # This needs to move to the main class...
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s - %(message)s', level=logging.DEBUG)
@@ -11,7 +10,7 @@ VIDEO_ENABLED = True
 ESCAPE_KEY = 27                                             # The numerical value of ESC
 MINIMUM_AREA = 2000                                         # The smallest area in pixels we expect a vehicle to be
 FRAME_NAME = "SpeedCam"                                     # Main frame name
-DISTANCE_IN_FEET = 50
+DISTANCE_IN_FEET = 55
 
 
 class VideoProcessor:
@@ -22,6 +21,7 @@ class VideoProcessor:
         self.logger = logging.getLogger(__name__)
 
         # Initialize service
+        self.video_feed = video_feed
         self.capture = cv2.VideoCapture(video_feed)
         self.video_enabled = video_enabled
         self.statistics = statistics.Statistics()
@@ -67,7 +67,14 @@ class VideoProcessor:
                 break
 
             # Capture the frame
-            ret, frame = self.capture.read()
+            try:
+                ret, frame = self.capture.read()
+            except Exception:
+                # TODO: Consider better exception handling here.
+                logging.error("Something went wrong with opencv library")
+
+                self.capture = cv2.VideoCapture(self.video_feed)
+                continue
 
             # We need to do stuff to figure out about the images
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -86,6 +93,8 @@ class VideoProcessor:
 
             # Find contours and sort by size
             contours, hierarchy = cv2.findContours(image_threshold, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+
+
             contours = sorted(contours, key=cv2.contourArea)
 
             num_of_cars = 0
@@ -117,7 +126,8 @@ class VideoProcessor:
                     # TODO : Need to figure this error handling out.
                     try:
                         average_speed = self.target.get_average_speed_in_mph()
-                        self.logger.info("Vehicle speed: %sMPH", average_speed)
+                        direction = self.target.get_direction_of_travel()
+                        self.logger.info("Vehicle speed: %sMPH Direction: %s", average_speed, direction)
                         self.statistics.add_target(average_speed,
                                                    self.target.get_direction_of_travel(),
                                                    None,
@@ -128,16 +138,17 @@ class VideoProcessor:
                         self.target = None
 
             if self.video_enabled:
-                cv2.imshow(FRAME_NAME, frame)
+                #cv2.imshow(FRAME_NAME, frame)
 
                 # Can be used for image debugging
                 #cv2.imshow('"Forground Frame', image_threshold)
+                pass
 
     # Mark the object on the frame
     def mark_object(self, frame, rect):
-        x, y, h, w = rect
+        x, y, w, h = rect
         area = w * h
-        cv2.rectangle(frame, (x, y), (x - 200 + w + 200, y - 200 + h + 200), (255, 255, 0), 2)
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 255, 0), 2)
         cv2.putText(frame, str(area), (x + w + 10, y + h), 0, 0.3, (255, 255, 0))
 
     # Stops the service

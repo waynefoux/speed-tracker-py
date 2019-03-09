@@ -31,9 +31,9 @@ class Target:
 
         #Calculate direction
         if delta < 0:
-            self.direction_of_travel = "left"
+            self.direction_of_travel = "<"
         else:
-            self.direction_of_travel = "right"
+            self.direction_of_travel = ">"
 
         # Calculate miles/hour
         feet_traveled = float(distance_traveled) / self.pixels_per_foot
@@ -62,6 +62,9 @@ class Target:
                 raise Exception('Not enough data points')
 
             return round(sum_of_mph / len(self.list_of_mph))
+
+    def get_direction_of_travel(self):
+        return self.direction_of_travel
 
     def get_direction_of_travel(self):
         return self.direction_of_travel

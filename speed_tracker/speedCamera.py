@@ -1,7 +1,6 @@
 import sys
 import getopt
-import videoProcessor
-
+from speed_tracker import videoProcessor
 
 
 def main(argv):
